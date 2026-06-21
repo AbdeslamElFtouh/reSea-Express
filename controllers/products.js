@@ -106,8 +106,8 @@ async function index(request, response) {
 
 async function show(request, response) {
     try {
-       const { slug } = request.params;
-       const normalizedSlug = typeof slug === "string" ? slug.trim() : "";
+        const { slug } = request.params;
+        const normalizedSlug = typeof slug === "string" ? slug.trim() : "";
 
         if (!normalizedSlug) {
             return response.status(400).json({
@@ -131,7 +131,7 @@ async function show(request, response) {
             LIMIT 1
         `;
 
-        const [rows] = await connection.execute(productSql, [slug]);
+        const [rows] = await connection.execute(productSql, [normalizedSlug]);
 
         if (rows.length === 0) {
             return response.status(404).json({
@@ -140,13 +140,8 @@ async function show(request, response) {
             });
         }
 
-        const baseUrl = `${request.protocol}://${request.get('host')}`;
-        const productFormatted = formatProduct(rows[0], baseUrl);
-        const product = {
-            ...rows[0],
-            price: Number(rows[0].price),
-            plastic_offset_kg: Number(rows[0].plastic_offset_kg)
-        };
+        const baseUrl = `${request.protocol}://${request.get("host")}`;
+        const product = formatProduct(rows[0], baseUrl);
 
         const categoriesSql = `
             SELECT
@@ -160,14 +155,14 @@ async function show(request, response) {
             ORDER BY c.name ASC
         `;
 
-        const [categories] = await connection.execute(categoriesSql, [product.id]);
+        const [categories] = await connection.execute(categoriesSql, [rows[0].id]);
 
         product.categories = categories;
 
         return response.status(200).json({
             error: null,
             data: product
-
+        });
 
     } catch (error) {
         console.error(error);

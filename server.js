@@ -2,6 +2,7 @@ import express from 'express';
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from 'url';
+
 import orderRouter from './routers/orders-router.js';
 import productRouter from './routers/products-router.js';
 import categoriesRouter from './routers/categories-router.js';
@@ -9,12 +10,15 @@ import categoriesRouter from './routers/categories-router.js';
 
 const app = express();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const port = process.env.PORT || 3000;
 const host = process.env.HOST || 'localhost';
 
 app.use(cors());
 app.use(express.json());
-app.use('/assets', express.static('public/assets'))
+app.use("/assets", express.static(path.join(__dirname, "public/assets")));
 
 
 app.use('/orders', orderRouter);
