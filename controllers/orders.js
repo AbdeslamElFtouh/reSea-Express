@@ -35,7 +35,7 @@ async function index(request, response) {
 
 async function show(request, response) {
     try {
-        const orderId = request.orderId;
+        const orderId = request.orderId
 
         const querySql = `
             SELECT
