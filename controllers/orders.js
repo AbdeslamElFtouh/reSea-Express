@@ -38,18 +38,17 @@ async function show(request, response) {
         const orderId = request.orderId
 
         const querySql = `
-            SELECT
-                id,
-                email_client,
-                shipping_address,
-                billing_address, 
-                total_amount, 
-                order_date, 
-                client_name, 
-                phone_number
-            FROM orders
-            WHERE id = ?
-            LIMIT 1
+        SELECT 
+            o.id, 
+            o.email_client, 
+            o.total_amount, 
+            o.order_date, 
+            o.client_name,
+            p.name AS product_name, op.quantity, op.price
+        FROM orders o
+        JOIN order_product op ON o.id = op.order_id
+        JOIN products p ON op.product_id = p.id
+        WHERE o.id = ?
         `;
 
         const [rows] = await connection.execute(querySql, [orderId]);
@@ -61,9 +60,23 @@ async function show(request, response) {
             });
         }
 
+        const orderData = {
+            id: rows[0].id,
+            email: rows[0].email_client,
+            total: rows[0].total_amount,
+            date: rows[0].order_date,
+            client: rows[0].client_name,
+
+            items: rows.map(row => ({
+                product_name: row.product_name,
+                quantity: row.quantity,
+                price: row.price
+            }))
+        };
+
         return response.status(200).json({
             error: null,
-            data: rows[0]
+            data: orderData
         });
 
     } catch (error) {
@@ -77,55 +90,74 @@ async function show(request, response) {
 }
 
 async function create(request, response) {
+    console.log("Dati ricevuti dal body:", request.body);
     try {
         const {
             email_client,
             shipping_address,
             billing_address,
-            total_amount,
-            order_date,
             client_name,
-            phone_number
+            phone_number,
+            items
         } = request.body;
 
+        await connection.beginTransaction();
+
+        let totalAmount = 0;
+        const processedItems = [];
+
+        for (const item of items) {
+            const [rows] = await connection.execute(
+                "SELECT price FROM products WHERE id = ?", [item.id]
+            );
+
+            if (rows.length === 0) throw new Error(`Prodotto ${item.id} non trovato`);
+
+            const unitPrice = rows[0].price;
+            totalAmount += unitPrice * item.quantity;
+
+            processedItems.push({ ...item, product_id: item.id, unitPrice });
+        }
+
         const querySql = `
-            INSERT INTO orders (
-                email_client,
-                shipping_address,
-                billing_address,
-                total_amount,
-                order_date,
-                client_name,
-                phone_number
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO orders (email_client, shipping_address, billing_address, total_amount, order_date, client_name, phone_number)
+            VALUES (?, ?, ?, ?, NOW(), ?, ?)
         `;
 
         const [result] = await connection.execute(querySql, [
             email_client,
             shipping_address,
             billing_address,
-            total_amount,
-            order_date,
+            totalAmount,
             client_name,
             phone_number
         ]);
 
+        const orderId = result.insertId;
+
+        for (const item of processedItems) {
+            await connection.execute(
+                "INSERT INTO order_product (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)",
+                [orderId, item.product_id, item.quantity, item.unitPrice]
+            );
+        }
+
+        await connection.commit();
+
         return response.status(201).json({
-            error: null,
             message: "Ordine creato con successo",
-            data: {
-                id: result.insertId
-            }
+            data: { id: orderId, total: totalAmount }
         });
-    }catch (error) {
+    } catch (error) {
+        await connection.rollback();
         console.error(error);
 
-        return response.status(500).json({
-            error: "Errore interno del server",
-            message: "Errore durante la creazione dell'ordine"
-        });
+        if (error.message.includes("non trovato")) {
+            return response.status(404).json({ message: error.message });
+        }
+
+        return response.status(500).json({ error: "Errore interno del server" });
     }
 }
 
-export { index, show, create};
+export { index, show, create };
